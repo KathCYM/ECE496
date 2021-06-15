@@ -1,14 +1,14 @@
-#!/home/yeemanchoi/anaconda3/envs/tf/bin/python3
+#!/home/choiyee/anaconda3/envs/tf/bin/python3
 import pandas as pd
 import numpy as np
 import re
 
 import sklearn
 from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score
 
 import torch
 from torch.utils.data import Dataset, DataLoader
-from tqdm.notebook import tqdm
 
 import transformers
 from transformers import (set_seed,
@@ -19,7 +19,7 @@ from transformers import (set_seed,
                           AdamW,
                           get_linear_schedule_with_warmup,
                           GPT2ForSequenceClassification)
-workspace_path = "/home/yeemanchoi/ECE496"
+workspace_path = "/home/choiyee/proj/ECE496"
 
 dataset_1 = pd.read_csv(workspace_path + "/datasets/mbti_1.csv")
 print("Dataset information:")
@@ -91,7 +91,7 @@ class MBTI_Dataset(Dataset):
 
 def collate(batch):
   #max sequence length allowed in model = 1024, need to pad/truncate sequence length
-  ds = tokenizer(text=[each['posts'] for each in batch], return_tensors="pt", padding=True, truncation=True, max_length=1024)
+  ds = tokenizer(text=[each['posts'] for each in batch], return_tensors="pt", padding=True, truncation=True, max_length=128)
   ds.update({'labels':torch.tensor([each['types'] for each in batch])})
   return ds
 
@@ -135,6 +135,30 @@ def train(model, dataloader, optimizer_, scheduler_):
 
   return true_labels, predicted_labels, avg_epoch_loss
 
+def validation(model, dataloader):
+
+  predicted_labels = []
+  true_labels = []
+  total_loss = 0
+
+  model.eval()
+
+  for batch in dataloader:
+
+    true_labels += batch['labels'].numpy().flatten().tolist()
+
+    with torch.no_grad():        
+        outputs = model(**batch)
+        loss = outputs.loss
+        logits = outputs.logits        
+        total_loss += loss.item()
+
+        predicted_labels += logits.argmax(axis=-1).flatten().tolist()
+
+  avg_epoch_loss = total_loss / len(dataloader)
+
+  return true_labels, predicted_labels, avg_epoch_loss
+
 #try different optimizer/prarmeters
 optimizer = AdamW(model.parameters(),
                   lr = 5e-5, # default is 5e-5.
@@ -158,7 +182,7 @@ for epoch in range(epochs):
   train_labels, train_predict, train_loss = train(model, train_dataloader, optimizer, scheduler)
   train_acc = accuracy_score(train_labels, train_predict)
 
-  valid_labels, valid_predict, val_loss = validation(valid_ds)
+  valid_labels, valid_predict, val_loss = validation(model, test_dataloader)
   val_acc = accuracy_score(valid_labels, valid_predict)
 
   print("  train_loss: %.5f - val_loss: %.5f - train_acc: %.5f - valid_acc: %.5f"%(train_loss, val_loss, train_acc, val_acc))
