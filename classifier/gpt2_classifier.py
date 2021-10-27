@@ -1,4 +1,3 @@
-#!/home/choiyee/anaconda3/envs/tf/bin/python3
 import pandas as pd
 import numpy as np
 import re
@@ -6,6 +5,7 @@ import re
 import sklearn
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -19,50 +19,14 @@ from transformers import (set_seed,
                           AdamW,
                           get_linear_schedule_with_warmup,
                           GPT2ForSequenceClassification)
-workspace_path = "/home/choiyee/proj/ECE496"
+workspace_path = "/home/choiyee/ece496/ECE496-Personality-Classifer"
 
-dataset_1 = pd.read_csv(workspace_path + "/datasets/mbti_1.csv")
+processed_df = pd.read_csv(workspace_path + "/datasets/mbti_processed.csv")
 print("Dataset information:")
-dataset_1.info()
+processed_df.info()
 
-labels = np.unique(dataset_1['type'])
+labels = np.unique(processed_df['type'])
 print("Labels:", labels)
-
-def text_preprocess(df):
-
-    processed_df = df.copy()
-
-    #strip quotes at beinging/end
-    processed_df["posts"] = processed_df["posts"].apply(lambda x: x.strip('\''))
-
-    #remove links
-    processed_df["posts"] = processed_df["posts"].apply(lambda x: re.sub(r'https?:.*?[\s+]', '', x))
-
-    #convert to lowercase
-    processed_df["posts"] = processed_df["posts"].apply(lambda x: x.lower())
-
-    #remove non-words, keep puntuation and numbers in word
-    processed_df["posts"] = processed_df["posts"].apply(lambda x: re.sub(r'[^a-zA-Z0-9\'\.\?!\s\-]',' ',x))
-    processed_df["posts"] = processed_df["posts"].apply(lambda x: re.sub(r'[^a-zA-z0-9]\.',' ',x))
-    processed_df["posts"] = processed_df["posts"].apply(lambda x: re.sub(r'[^a-zA-z0-9]\?',' ',x))
-    processed_df["posts"] = processed_df["posts"].apply(lambda x: re.sub(r'[^a-zA-z0-9]\!',' ',x))
-    processed_df["posts"] = processed_df["posts"].apply(lambda x: re.sub(r'[^a-zA-z\s][0-9]*[^a-zA-z\s]',' ',x))
-
-    #replace multiple spaces with one
-    processed_df["posts"] = processed_df["posts"].apply(lambda x: re.sub(r'\s+',' ',x))
-
-    return processed_df
-
-def preprocess(df):
-  processed_ds = text_preprocess(df)
-  encoder = LabelEncoder()
-  processed_ds['encoded_type'] = encoder.fit_transform(processed_ds['type'])
-  print("encode mapping: ")
-  print({x:encoder.inverse_transform([x])[0] for x in range(16)})
-  return processed_ds
-
-processed_ds = preprocess(dataset_1)
-processed_ds.head(10)
 
 model_config = GPT2Config.from_pretrained('gpt2', num_labels=16)
 tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
@@ -78,7 +42,7 @@ print(model.get_input_embeddings)
 #store dataset in a iterable class for constructing batches later
 class MBTI_Dataset(Dataset):
   def __init__(self, ds):
-    self.posts = ds.posts.to_list()
+    self.posts = ds.post.to_list()
     self.types = ds.encoded_type.to_list()
     self.n_examples = len(self.posts)
     return
@@ -95,9 +59,10 @@ def collate(batch):
   ds.update({'labels':torch.tensor([each['types'] for each in batch])})
   return ds
 
-total_data = len(processed_ds)
-train_ds = MBTI_Dataset(processed_ds.loc[:int(0.9*total_data)])
-test_ds = MBTI_Dataset(processed_ds.loc[int(0.9*total_data):])
+total_data = len(processed_df)
+#processed_df is randomly shuffled
+train_ds = MBTI_Dataset(processed_df.loc[:int(0.9*total_data)])
+test_ds = MBTI_Dataset(processed_df.loc[int(0.9*total_data):])
 train_dataloader = DataLoader(train_ds, batch_size=32, shuffle=True, collate_fn=collate)
 test_dataloader = DataLoader(test_ds, batch_size=32, shuffle=True, collate_fn=collate)
 
